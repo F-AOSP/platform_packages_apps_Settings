@@ -21,24 +21,31 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.Bundle;
+import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.util.DisplayMetrics;
+import android.util.Log;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.ListAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.android.internal.telephony.IExtTelephony;
 import com.android.settings.R;
 import com.android.settings.Utils;
 import java.util.ArrayList;
@@ -55,6 +62,9 @@ public class SimDialogActivity extends Activity {
     public static final int CALLS_PICK = 1;
     public static final int SMS_PICK = 2;
     public static final int PREFERRED_PICK = 3;
+
+    private IExtTelephony mExtTelephony = IExtTelephony.Stub.
+            asInterface(ServiceManager.getService("extphone"));
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -152,6 +162,7 @@ public class SimDialogActivity extends Activity {
     public Dialog createDialog(final Context context, final int id) {
         final ArrayList<String> list = new ArrayList<String>();
         final SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
+        final ArrayList<SubscriptionInfo> smsSubInfoList = new ArrayList<SubscriptionInfo>();
         final List<SubscriptionInfo> subInfoList =
             subscriptionManager.getActiveSubscriptionInfoList();
         final int selectableSubInfoLength = subInfoList == null ? 0 : subInfoList.size();
@@ -162,11 +173,19 @@ public class SimDialogActivity extends Activity {
                     public void onClick(DialogInterface dialog, int value) {
 
                         final SubscriptionInfo sir;
-
+                        boolean ddsalertDisplayed = false;
                         switch (id) {
                             case DATA_PICK:
                                 sir = subInfoList.get(value);
-                                setDefaultDataSubId(context, sir.getSubscriptionId());
+                                final int preferredSubID = sir.getSubscriptionId();
+                                int defaultDataSubId = SubscriptionManager.getDefaultDataSubId();
+                                if (defaultDataSubId != preferredSubID) {
+                                    ddsalertDisplayed = displayDdsAlertIfNeeded(context,
+                                           preferredSubID, defaultDataSubId);
+                                    if (ddsalertDisplayed == false) {
+                                        setDefaultDataSubId(context, preferredSubID);
+                                    }
+                                }
                                 break;
                             case CALLS_PICK:
                                 final TelecomManager telecomManager =
@@ -177,15 +196,34 @@ public class SimDialogActivity extends Activity {
                                         value < 1 ? null : phoneAccountsList.get(value - 1));
                                 break;
                             case SMS_PICK:
-                                sir = subInfoList.get(value);
-                                setDefaultSmsSubId(context, sir.getSubscriptionId());
+                                boolean isSmsPrompt = false;
+                                if (value < 1) {
+                                    isSmsPrompt = true;
+                                } else {
+                                    sir = smsSubInfoList.get(value);
+                                    if ( sir != null) {
+                                        setDefaultSmsSubId(context, sir.getSubscriptionId());
+                                    } else {
+                                        isSmsPrompt = true;
+                                    }
+                                    Log.d(TAG, "SubscriptionInfo:" + sir);
+                                }
+                                Log.d(TAG, "isSmsPrompt: " + isSmsPrompt);
+                                try {
+                                    mExtTelephony.setSMSPromptEnabled(isSmsPrompt);
+                                } catch (RemoteException ex) {
+                                    Log.e(TAG, "RemoteException @setSMSPromptEnabled" + ex);
+                                } catch (NullPointerException ex) {
+                                    Log.e(TAG, "NullPointerException @setSMSPromptEnabled" + ex);
+                                }
                                 break;
                             default:
                                 throw new IllegalArgumentException("Invalid dialog type "
                                         + id + " in SIM dialog.");
                         }
-
-                        finish();
+                        if (id != DATA_PICK || ddsalertDisplayed == false) {
+                            finish();
+                        }
                     }
                 };
 
@@ -222,6 +260,18 @@ public class SimDialogActivity extends Activity {
                     callsSubInfoList.add(null);
                 }
             }
+        } else if ((id == SMS_PICK)){
+            list.add(getResources().getString(R.string.sim_sms_ask_first_prefs_title));
+            smsSubInfoList.add(null);
+            for (int i = 0; i < selectableSubInfoLength; ++i) {
+                final SubscriptionInfo sir = subInfoList.get(i);
+                smsSubInfoList.add(sir);
+                CharSequence displayName = sir.getDisplayName();
+                if (displayName == null) {
+                    displayName = "";
+                }
+                list.add(displayName.toString());
+            }
         } else {
             for (int i = 0; i < selectableSubInfoLength; ++i) {
                 final SubscriptionInfo sir = subInfoList.get(i);
@@ -238,7 +288,8 @@ public class SimDialogActivity extends Activity {
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
 
         ListAdapter adapter = new SelectAccountListAdapter(
-                id == CALLS_PICK ? callsSubInfoList : subInfoList,
+                id == CALLS_PICK ? callsSubInfoList :
+                (id == SMS_PICK ? smsSubInfoList: subInfoList),
                 builder.getContext(),
                 R.layout.select_account_list_item,
                 arr, id);
@@ -328,5 +379,93 @@ public class SimDialogActivity extends Activity {
             TextView summary;
             ImageView icon;
         }
+    }
+
+    private static boolean isDdsSwitchAlertDialogSupported(Context context, int subId) {
+        Resources res = getResourcesForSubId(context, subId);
+        return res.getBoolean(R.bool.config_dds_switch_alert_dialog_supported);
+    }
+
+    /**
+     * Returns the resources related to Subscription.
+     * @param Context object
+     * @param Subscription Id of Subscription who's resources are required
+     * @return Resources of the Sub.
+     * @hide
+     */
+    private static Resources getResourcesForSubId(Context context, int subId) {
+        String operatorNumeric = TelephonyManager.getDefault().getIccOperatorNumericForData(subId);
+        Configuration config = context.getResources().getConfiguration();
+        Configuration newConfig = new Configuration();
+        newConfig.setTo(config);
+
+        if (!TextUtils.isEmpty(operatorNumeric)) {
+            newConfig.mcc = Integer.parseInt(operatorNumeric.substring(0,3));
+            newConfig.mnc = Integer.parseInt(operatorNumeric.substring(3));
+        }
+        Log.d(TAG, "getResourcesForSubId: " + subId +
+                ", mccmnc = " + newConfig.mcc + newConfig.mnc);
+
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        DisplayMetrics newMetrics = new DisplayMetrics();
+        newMetrics.setTo(metrics);
+
+        return new Resources(context.getResources().getAssets(), newMetrics, newConfig);
+    }
+
+    private boolean displayDdsAlertIfNeeded(
+            final Context context, final int subId, final int defaultDataSubId) {
+        final SubscriptionManager subscriptionManager = SubscriptionManager.from(context);
+        final TelephonyManager telephonymanager = TelephonyManager.from(context);
+        Log.d(TAG, "Default Data SubId [" + defaultDataSubId + "]");
+
+        if (isDdsSwitchAlertDialogSupported(context, defaultDataSubId) &&
+               ((telephonymanager.getVoiceNetworkType(defaultDataSubId) ==
+                       TelephonyManager.NETWORK_TYPE_LTE) ||
+                (telephonymanager.getVoiceNetworkType(defaultDataSubId) ==
+                       TelephonyManager.NETWORK_TYPE_LTE_CA) ||
+                (telephonymanager.getDataNetworkType(defaultDataSubId) ==
+                       TelephonyManager.NETWORK_TYPE_LTE) ||
+                (telephonymanager.getDataNetworkType(defaultDataSubId) ==
+                       TelephonyManager.NETWORK_TYPE_LTE_CA))) {
+            Log.d(TAG, "DDS switch request from LTE sub");
+
+            AlertDialog alertDlg = new AlertDialog.Builder(context).create();
+            String title = context.getResources().getString(
+                    R.string.data_switch_warning_title,
+                    SubscriptionManager.getSlotId(subId) + 1);
+            alertDlg.setTitle(title);
+            String warningString = context.getResources().getString(
+                    R.string.data_switch_warning_text);
+            alertDlg.setMessage(warningString);
+            alertDlg.setCancelable(false);
+
+            String yes = context.getResources().getString(
+                    R.string.yes);
+            alertDlg.setButton(yes, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int id) {
+                    Log.d(TAG, "Switch DDS to subId: " + subId );
+                    subscriptionManager.setDefaultDataSubId(subId);
+                    Toast.makeText(context, R.string.data_switch_started, Toast.LENGTH_LONG)
+                            .show();
+                    finish();
+                }
+            });
+
+            String no = context.getResources().getString(
+                    R.string.no);
+            alertDlg.setButton2(no, new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int id) {
+                    Log.d(TAG, "Cancelled switch DDS to subId: " + subId);
+                    dialog.cancel();
+                    finish();
+                    return;
+                }
+            });
+
+            alertDlg.show();
+            return true;
+        }
+        return false;
     }
 }

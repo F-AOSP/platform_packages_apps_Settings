@@ -80,7 +80,7 @@ public final class BluetoothPairingRequest extends BroadcastReceiver {
                         .setTicker(res.getString(R.string.bluetooth_notif_ticker));
 
                 PendingIntent pending = PendingIntent.getActivity(context, 0,
-                        pairingIntent, PendingIntent.FLAG_ONE_SHOT);
+                        pairingIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
                 String name = intent.getStringExtra(BluetoothDevice.EXTRA_NAME);
                 if (TextUtils.isEmpty(name)) {
@@ -102,6 +102,16 @@ public final class BluetoothPairingRequest extends BroadcastReceiver {
             }
 
         } else if (action.equals(BluetoothDevice.ACTION_PAIRING_CANCEL)) {
+            Intent pairingIntent = new Intent();
+
+            pairingIntent.setClass(context, BluetoothPairingDialog.class);
+            pairingIntent.setAction(BluetoothDevice.ACTION_PAIRING_REQUEST);
+            pairingIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            PendingIntent pending = PendingIntent.getActivity(context, 0,
+                                      pairingIntent, PendingIntent.FLAG_NO_CREATE);
+            if (pending != null) {
+                pending.cancel();
+            }
 
             // Remove the notification
             NotificationManager manager = (NotificationManager) context
@@ -114,7 +124,8 @@ public final class BluetoothPairingRequest extends BroadcastReceiver {
             int oldState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE,
                     BluetoothDevice.ERROR);
             if((oldState == BluetoothDevice.BOND_BONDING) &&
-                    (bondState == BluetoothDevice.BOND_NONE)) {
+                    (bondState == BluetoothDevice.BOND_NONE ||
+                         bondState == BluetoothDevice.BOND_BONDED)) {
                 // Remove the notification
                 NotificationManager manager = (NotificationManager) context
                     .getSystemService(Context.NOTIFICATION_SERVICE);

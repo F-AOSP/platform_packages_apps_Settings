@@ -265,7 +265,11 @@
             <meta-data android:name="com.android.settings.PRIMARY_PROFILE_CONTROLLED"
                 android:value="true" />
         </activity>
-
+        <activity android:name=".SubSettings$SavedAccessPointsSubSettings"
+            android:taskAffinity="com.android.settings"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:parentActivityName="Settings">
+        </activity>
         <activity android:name="Settings$SavedAccessPointsSettingsActivity"
                 android:taskAffinity="com.android.settings"
                 android:label="@string/wifi_saved_access_points_label"
@@ -373,6 +377,12 @@
                 android:value="true" />
             <meta-data android:name="com.android.settings.FRAGMENT_CLASS"
                        android:value="com.android.settings.ApnSettings" />
+        </activity>
+
+        <activity android:name=".SubSettings$BluetoothSubSettings"
+                android:taskAffinity="com.android.settings"
+                android:configChanges="orientation|keyboardHidden|screenSize"
+                android:parentActivityName="Settings">
         </activity>
 
         <activity android:name="Settings$BluetoothSettingsActivity"
@@ -2414,7 +2424,7 @@
         <activity android:name="RegulatoryInfoDisplayActivity"
                   android:label="@string/regulatory_information"
                   android:taskAffinity=""
-                  android:enabled="@bool/config_show_regulatory_info">
+                  android:enabled="true">
             <intent-filter>
                 <action android:name="android.settings.SHOW_REGULATORY_INFO" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -2471,6 +2481,7 @@
 
         <activity android:name="Settings$SimSettingsActivity"
                 android:label="@string/sim_settings_title"
+                android:configChanges="mcc|mnc"
                 android:taskAffinity="">
             <intent-filter android:priority="1">
                 <action android:name="com.android.settings.sim.SIM_SUB_INFO_SETTINGS" />
