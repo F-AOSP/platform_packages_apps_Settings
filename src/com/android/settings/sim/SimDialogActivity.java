@@ -422,12 +422,8 @@ public class SimDialogActivity extends Activity {
         if (isDdsSwitchAlertDialogSupported(context, defaultDataSubId) &&
                ((telephonymanager.getVoiceNetworkType(defaultDataSubId) ==
                        TelephonyManager.NETWORK_TYPE_LTE) ||
-                (telephonymanager.getVoiceNetworkType(defaultDataSubId) ==
-                       TelephonyManager.NETWORK_TYPE_LTE_CA) ||
                 (telephonymanager.getDataNetworkType(defaultDataSubId) ==
-                       TelephonyManager.NETWORK_TYPE_LTE) ||
-                (telephonymanager.getDataNetworkType(defaultDataSubId) ==
-                       TelephonyManager.NETWORK_TYPE_LTE_CA))) {
+                       TelephonyManager.NETWORK_TYPE_LTE))) {
             Log.d(TAG, "DDS switch request from LTE sub");
 
             AlertDialog alertDlg = new AlertDialog.Builder(context).create();
