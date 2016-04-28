@@ -139,7 +139,6 @@ public class ChooseLockGeneric extends SettingsActivity {
             mKeyStore = KeyStore.getInstance();
             mChooseLockSettingsHelper = new ChooseLockSettingsHelper(this.getActivity());
             mLockPatternUtils = new LockPatternUtils(getActivity());
-            mLockPatternUtils.sanitizePassword();
 
             // Defaults to needing to confirm credentials
             final boolean confirmCredentials = getActivity().getIntent()
@@ -521,7 +520,6 @@ public class ChooseLockGeneric extends SettingsActivity {
         @Override
         public void onDestroy() {
             super.onDestroy();
-            mLockPatternUtils.sanitizePassword();
         }
 
         @Override
